@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>럭키 룰렛 - 파이널 마스터피스</title>
+    <style>
+        /* 기본 레이아웃 및 우주 배경 */
+        body {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; margin: 0;
+            background: radial-gradient(circle at center, #1b2735 0%, #090a0f 100%) !important;
+            color: white; font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+            overflow: hidden;
+        }
+
+        /* 룰렛을 고정하는 부모 컨테이너 */
+        #roulette-wrapper {
+            position: relative;
+            width: 440px;
+            height: 440px;
+            margin-bottom: 50px;
+            flex-shrink: 0;
+        }
+
+        /* 화살표 디자인 */
+        #arrow {
+            position: absolute; top: -35px; left: 50%; transform: translateX(-50%);
+            width: 0; height: 0; 
+            border-left: 25px solid transparent; 
+            border-right: 25px solid transparent; 
+            border-top: 55px solid #ff4757; 
+            z-index: 100;
+            filter: drop-shadow(0 4px 10px rgba(255, 71, 87, 0.5));
+        }
+
+        /* 룰렛 본체 프레임 (절대 크기 고정) */
+        #roulette-frame {
+            position: relative;
+            width: 440px;
+            height: 440px;
+            border-radius: 50%;
+            border: 12px solid #ffffff;
+            box-shadow: 0 0 50px rgba(52, 152, 219, 0.4);
+            background: #222;
+            overflow: hidden;
+            z-index: 10;
+        }
+
+        /* 실제 회전하는 캔버스 */
+        canvas#rouletteCanvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 440px !important; /* CSS로 크기 강제 고정 */
+            height: 440px !important;
+            display: block;
+            transition: transform 4s cubic-bezier(0.15, 0, 0.15, 1);
+            will-change: transform;
+        }
+
+        /* 스핀 버튼 */
+        #spinBtn {
+            padding: 20px 90px; font-size: 28px; font-weight: 900; cursor: pointer;
+            background: linear-gradient(145deg, #ffffff, #d9d9d9);
+            color: #333; border: none; border-radius: 60px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 50;
+        }
+        #spinBtn:hover { transform: scale(1.05); background: #00d2ff; color: white; box-shadow: 0 0 30px #00d2ff; }
+        #spinBtn:active { transform: scale(0.95); }
+        #spinBtn:disabled { background: #444; color: #777; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* 결과 창 오버레이 */
+        #win-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 2000;
+        }
+        #win-message { text-align: center; animation: popIn 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .rank-label { font-size: 26px; font-weight: 800; color: #888; letter-spacing: 5px; margin-bottom: 20px; display: block; }
+        .win-item { font-size: 75px; font-weight: 950; margin: 15px 0; display: block; text-shadow: 0 0 40px currentColor; }
+        .win-reward { font-size: 40px; color: #fff; font-weight: 700; opacity: 0.9; }
+        
+        #closeBtn {
+            margin-top: 60px; padding: 18px 60px; font-size: 22px;
+            background: transparent; border: 2px solid #fff; color: #fff;
+            border-radius: 50px; cursor: pointer; font-weight: 700; transition: 0.3s;
+        }
+        #closeBtn:hover { background: #fff; color: #000; }
+
+        /* 테스트 도구 (우측 하단) */
+        #test-panel {
+            position: fixed; bottom: 25px; right: 25px;
+            background: rgba(255, 255, 255, 0.08); padding: 12px 20px; border-radius: 12px;
+            font-size: 14px; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 10px; z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #testMode { width: 20px; height: 20px; cursor: pointer; }
+
+        @keyframes popIn { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div id="roulette-wrapper">
+        <div id="arrow"></div>
+        <div id="roulette-frame">
+            <!-- 캔버스 드로잉 해상도는 높게(1000px), CSS 출력은 부모에 맞게(440px) -->
+            <canvas id="rouletteCanvas" width="1000" height="1000"></canvas>
+        </div>
+    </div>
+
+    <button id="spinBtn" onclick="spin()">SPIN!</button>
+
+    <div id="test-panel">
+        <input type="checkbox" id="testMode">
+        <label for="testMode" style="cursor:pointer; user-select:none;">🧪 테스트 모드 (모든 확률 균등)</label>
+    </div>
+
+    <div id="win-overlay">
+        <div id="win-message"></div>
+        <button id="closeBtn" onclick="closeWin()">다시 도전하기</button>
+    </div>
+
+    <!-- 폭죽 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <script>
+        const canvas = document.getElementById('rouletteCanvas');
+        const ctx = canvas.getContext('2d');
+        const spinBtn = document.getElementById('spinBtn');
+        const winOverlay = document.getElementById('win-overlay');
+        const testModeCheckbox = document.getElementById('testMode');
+
+        // 데이터 구성
+        const items = [
+            { label: "1%", weight: 1, color: "#f1c40f", count: 5, rank: "LEGENDARY" },
+            { label: "4%", weight: 4, color: "#e67e22", count: 3, rank: "EPIC" },
+            { label: "5%", weight: 5, color: "#2ecc71", count: 2, rank: "RARE" },
+            { label: "90%", weight: 90, color: "#3498db", count: 1, rank: "COMMON" }
+        ];
+
+        // 룰렛 초기 렌더링
+        function draw() {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = canvas.width / 2;
+            let startAngle = -Math.PI / 2; // 12시 방향부터
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            items.forEach(item => {
+                const sliceAngle = (item.weight / 100) * 2 * Math.PI;
+
+                // 조각 그리기
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+                ctx.fillStyle = item.color;
+                ctx.fill();
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 6;
+                ctx.stroke();
+
+                // 텍스트 드로잉
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                ctx.rotate(startAngle + sliceAngle / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#ffffff";
+                
+                // 확률별 텍스트 크기 조절
+                const fontSize = item.weight > 10 ? 120 : 45;
+                ctx.font = `900 ${fontSize}px sans-serif`;
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 15;
+                
+                ctx.fillText(item.label, radius - 60, 20);
+                ctx.restore();
+
+                startAngle += sliceAngle;
+            });
+        }
+
+        window.onload = draw;
+
+        // 사운드 엔진
+        let audioCtx = null;
+        function playTick(freq, duration = 0.06) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        // 폭죽 효과 트리거
+        function triggerEffects(rank) {
+            const end = Date.now() + (rank === "LEGENDARY" ? 3000 : 1000);
+            const colors = rank === "LEGENDARY" ? ['#f1c40f', '#fff', '#e67e22'] : ['#3498db', '#ffffff'];
+
+            (function frame() {
+                confetti({
+                    particleCount: rank === "LEGENDARY" ? 5 : 2,
+                    angle: 60, spread: 55, origin: { x: 0 }, colors: colors
+                });
+                confetti({
+                    particleCount: rank === "LEGENDARY" ? 5 : 2,
+                    angle: 120, spread: 55, origin: { x: 1 }, colors: colors
+                });
+
+                if (Date.now() < end) requestAnimationFrame(frame);
+            }());
+
+            if (rank === "LEGENDARY" || rank === "EPIC") {
+                confetti({
+                    particleCount: 150, spread: 100, origin: { y: 0.6 },
+                    colors: ['#FFD700', '#FFA500', '#ffffff']
+                });
+            }
+        }
+
+        let totalRotation = 0;
+
+        function spin() {
+            spinBtn.disabled = true;
+            const isTest = testModeCheckbox.checked;
+
+            // 확률 계산
+            let winIdx;
+            if (isTest) {
+                winIdx = Math.floor(Math.random() * 4);
+            } else {
+                const r = Math.random() * 100;
+                winIdx = (r < 1) ? 0 : (r < 5) ? 1 : (r < 10) ? 2 : 3;
+            }
+
+            // 정확한 타겟 각도 계산 (칸 내부 무작위 지점)
+            let accumulatedWeight = 0;
+            for(let i = 0; i < winIdx; i++) accumulatedWeight += items[i].weight;
+            
+            const startAngle = (accumulatedWeight / 100) * 360;
+            const itemWidth = items[winIdx].weight / 100 * 360;
+            const randomOffset = itemWidth * 0.2 + Math.random() * (itemWidth * 0.6);
+            const targetAngle = startAngle + randomOffset;
+
+            // 회전 로직 (기존 각도 유지하며 추가 회전)
+            const extraSpins = 360 * 10; // 10바퀴 회전
+            const finalStop = extraSpins + (360 - targetAngle);
+            
+            // 현재 누적된 각도에서 부드럽게 이어지도록 보정
+            totalRotation += finalStop - (totalRotation % 360);
+            
+            canvas.style.transform = `rotate(${totalRotation}deg)`;
+
+            // 회전 시 틱 소리 (점점 느려짐)
+            for(let i=0; i<45; i++) {
+                setTimeout(() => playTick(500 + (Math.random()*100)), (i * i * 2.1));
+            }
+
+            // 결과 도출 (4초 후)
+            setTimeout(() => {
+                const winner = items[winIdx];
+                
+                // 성공 사운드
+                playTick(523, 0.3); setTimeout(() => playTick(659, 0.3), 150);
+                
+                // 폭죽 및 오버레이
+                triggerEffects(winner.rank);
+
+                document.getElementById('win-message').innerHTML = `
+                    <span class="rank-label">[ ${winner.rank} ]</span>
+                    <span class="win-item" style="color:${winner.color}">${winner.label} 당첨!</span>
+                    <span class="win-reward">${winner.count}개의 보상이 지급되었습니다.</span>
+                `;
+                winOverlay.style.display = 'flex';
+            }, 4000);
+        }
+
+        function closeWin() {
+            winOverlay.style.display = 'none';
+            spinBtn.disabled = false;
+        }
+    </script>
+</body>
+</html>
